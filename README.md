@@ -8,8 +8,6 @@ This Provider enhances the original one with the capability to run your devpod m
 
 ~The provider is available for auto-installation using~
 
-The provider is available for auto-installation using 
-
 ```sh
 devpod provider add aws
 devpod provider use aws
