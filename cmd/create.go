@@ -49,9 +49,16 @@ func (cmd *CreateCmd) Run(
 		return err
 	}
 
-	_, err = aws.Create(ctx, providerAws.AwsConfig, providerAws)
-	if err != nil {
-		return err
+	if providerAws.Config.UseSpot {
+		_, err = aws.CreateSpotInstance(ctx, providerAws.AwsConfig, providerAws)
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err = aws.Create(ctx, providerAws.AwsConfig, providerAws)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
