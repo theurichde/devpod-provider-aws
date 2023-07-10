@@ -636,10 +636,6 @@ func Delete(ctx context.Context, cfg aws.Config, instanceID string) error {
 		return err
 	}
 
-	svc.DeleteVpc(ctx, &ec2.DeleteVpcInput{
-		VpcId: aws.String(instanceID),
-	})
-
 	return err
 }
 

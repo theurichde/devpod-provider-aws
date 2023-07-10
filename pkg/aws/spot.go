@@ -12,6 +12,13 @@ import (
 func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsProvider) (*ec2.RequestSpotInstancesOutput, error) {
 	svc := ec2.NewFromConfig(cfg)
 
+	devpodSubnet, err := GetDevpodSubnet(ctx, providerAws)
+	if err != nil {
+		if err.Error() == "no devpod subnet found" {
+			devpodSubnet, err = CreateDevpodSubnet(ctx, providerAws)
+		}
+	}
+
 	devpodSG, err := GetDevpodSecurityGroup(ctx, providerAws)
 	if err != nil {
 		return nil, err
@@ -42,6 +49,7 @@ func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsPro
 			},
 			ImageId:  aws.String(providerAws.Config.DiskImage),
 			UserData: &userData,
+			SubnetId: &devpodSubnet,
 		},
 		TagSpecifications: []types.TagSpecification{
 			{
@@ -106,4 +114,45 @@ func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsPro
 	}
 
 	return result, nil
+}
+
+func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
+	svc := ec2.NewFromConfig(providerAws.AwsConfig)
+
+	vpc, err := GetDevpodVPC(ctx, providerAws)
+	if err != nil {
+		return "", err
+	}
+
+	subnet, err := svc.CreateSubnet(ctx, &ec2.CreateSubnetInput{
+		CidrBlock: aws.String("10.0.0.0/24"),
+		VpcId:     aws.String(vpc),
+	})
+	if err != nil {
+		return "", err
+	}
+	return *subnet.Subnet.SubnetId, nil
+}
+
+func GetDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
+	svc := ec2.NewFromConfig(providerAws.AwsConfig)
+
+	subnets, err := svc.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("tag:devpod"),
+				Values: []string{providerAws.Config.MachineID},
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if len(subnets.Subnets) == 0 {
+		return "", fmt.Errorf("no devpod subnet found")
+	}
+
+	return *subnets.Subnets[0].SubnetId, nil
+
 }
