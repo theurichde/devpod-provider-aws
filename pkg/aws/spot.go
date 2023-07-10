@@ -127,6 +127,17 @@ func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, 
 	subnet, err := svc.CreateSubnet(ctx, &ec2.CreateSubnetInput{
 		CidrBlock: aws.String("10.0.0.0/24"),
 		VpcId:     aws.String(vpc),
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: types.ResourceTypeSubnet,
+				Tags: []types.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String("devpod"),
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return "", err
@@ -140,8 +151,8 @@ func GetDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, err
 	subnets, err := svc.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 		Filters: []types.Filter{
 			{
-				Name:   aws.String("tag:devpod"),
-				Values: []string{providerAws.Config.MachineID},
+				Name:   aws.String("tag:Name"),
+				Values: []string{"devpod"},
 			},
 		},
 	})
