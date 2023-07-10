@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"sort"
 	"time"
 
@@ -61,7 +60,8 @@ func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 	if provider.Config.VpcID != "" {
 		return provider.Config.VpcID, nil
 	}
-	// Get a list of VPCs so we can associate the group with the first VPC.
+
+	// Get a list of VPCs, so we can associate the group with the first VPC.
 	svc := ec2.NewFromConfig(provider.AwsConfig)
 	result, err := svc.DescribeVpcs(ctx, nil)
 	if err != nil {
@@ -72,14 +72,28 @@ func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 		return "", errors.New("There are no VPCs to associate with")
 	}
 
-	// We need to find a default vpc
+	for _, vpc := range result.Vpcs {
+		for _, tag := range vpc.Tags {
+			if *tag.Key == "Name" && *tag.Value == "devpod" {
+				return *vpc.VpcId, nil
+			}
+		}
+	}
+
+	// No dedicated devpod VPC found, so we need to find a default vpc
 	for _, vpc := range result.Vpcs {
 		if *vpc.IsDefault {
 			return *vpc.VpcId, nil
 		}
 	}
 
-	return "", nil
+	// No default VPC found, so we need to create one
+	vpc, err := CreateDevpodVpc(ctx, provider)
+	if err != nil {
+		return "", err
+	}
+
+	return vpc, nil
 }
 
 func GetDefaultAMI(ctx context.Context, cfg aws.Config) (string, error) {
@@ -269,12 +283,36 @@ func GetDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string,
 	}
 
 	result, err := svc.DescribeSecurityGroups(ctx, input)
-	// It it is not created, do it
+	// If it is not created, do it
 	if len(result.SecurityGroups) == 0 || err != nil {
 		return CreateDevpodSecurityGroup(ctx, provider)
 	}
 
 	return *result.SecurityGroups[0].GroupId, nil
+}
+
+func CreateDevpodVpc(ctx context.Context, provider *AwsProvider) (string, error) {
+	svc := ec2.NewFromConfig(provider.AwsConfig)
+	input := &ec2.CreateVpcInput{
+		CidrBlock:                   aws.String("10.0.0.0/16"),
+		AmazonProvidedIpv6CidrBlock: aws.Bool(true),
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: types.ResourceTypeVpc,
+				Tags: []types.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String("devpod"),
+					},
+				},
+			},
+		},
+	}
+	vpc, err := svc.CreateVpc(ctx, input)
+	if err != nil {
+		return "", err
+	}
+	return *vpc.Vpc.VpcId, nil
 }
 
 func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string, error) {
@@ -461,105 +499,6 @@ func GetDevpodRunningInstance(
 	return result, nil
 }
 
-func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsProvider) (*ec2.RequestSpotInstancesOutput, error) {
-	svc := ec2.NewFromConfig(cfg)
-
-	devpodSG, err := GetDevpodSecurityGroup(ctx, providerAws)
-	if err != nil {
-		return nil, err
-	}
-
-	volSizeI32 := int32(providerAws.Config.DiskSizeGB)
-
-	userData, err := GetInjectKeypairScript(providerAws.Config.MachineFolder)
-	if err != nil {
-		return nil, err
-	}
-
-	spotInstance := ec2.RequestSpotInstancesInput{
-		InstanceCount: aws.Int32(1),
-		Type:          types.SpotInstanceTypePersistent,
-		LaunchSpecification: &types.RequestSpotLaunchSpecification{
-			InstanceType: types.InstanceType(providerAws.Config.MachineType),
-			SecurityGroupIds: []string{
-				devpodSG,
-			},
-			BlockDeviceMappings: []types.BlockDeviceMapping{
-				{
-					DeviceName: aws.String("/dev/sda1"),
-					Ebs: &types.EbsBlockDevice{
-						VolumeSize: &volSizeI32,
-					},
-				},
-			},
-			ImageId:  aws.String(providerAws.Config.DiskImage),
-			UserData: &userData,
-		},
-		TagSpecifications: []types.TagSpecification{
-			{
-				ResourceType: "spot-instances-request",
-				Tags: []types.Tag{
-					{
-						Key:   aws.String("devpod"),
-						Value: aws.String(providerAws.Config.MachineID),
-					},
-				},
-			},
-		},
-	}
-
-	profile, err := GetDevpodInstanceProfile(ctx, providerAws)
-	if err == nil {
-		spotInstance.LaunchSpecification.IamInstanceProfile = &types.IamInstanceProfileSpecification{
-			Arn: aws.String(profile),
-		}
-	}
-
-	if providerAws.Config.SubnetID != "" {
-		spotInstance.LaunchSpecification.SubnetId = &providerAws.Config.SubnetID
-	}
-
-	result, err := svc.RequestSpotInstances(ctx, &spotInstance)
-	if err != nil {
-		return nil, err
-	}
-
-	var instanceId string
-	for {
-		instanceRequests, err := svc.DescribeSpotInstanceRequests(ctx, &ec2.DescribeSpotInstanceRequestsInput{
-			SpotInstanceRequestIds: []string{*result.SpotInstanceRequests[0].SpotInstanceRequestId},
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		if len(instanceRequests.SpotInstanceRequests) > 0 {
-			if *instanceRequests.SpotInstanceRequests[0].Status.Code == "fulfilled" && instanceRequests.SpotInstanceRequests[0].InstanceId != nil {
-				fmt.Printf("Spot instance fulfilled: %s\n", *instanceRequests.SpotInstanceRequests[0].InstanceId)
-				instanceId = *instanceRequests.SpotInstanceRequests[0].InstanceId
-				break
-			}
-		}
-		fmt.Println("Waiting for spot instance fulfilment")
-		time.Sleep(5 * time.Second)
-	}
-
-	_, err = svc.CreateTags(ctx, &ec2.CreateTagsInput{
-		Resources: []string{instanceId},
-		Tags: []types.Tag{
-			{
-				Key:   aws.String("devpod"),
-				Value: aws.String(providerAws.Config.MachineID),
-			},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
 func Create(ctx context.Context, cfg aws.Config, providerAws *AwsProvider) (*ec2.RunInstancesOutput, error) {
 	svc := ec2.NewFromConfig(cfg)
 
@@ -696,6 +635,10 @@ func Delete(ctx context.Context, cfg aws.Config, instanceID string) error {
 	if err != nil {
 		return err
 	}
+
+	svc.DeleteVpc(ctx, &ec2.DeleteVpcInput{
+		VpcId: aws.String(instanceID),
+	})
 
 	return err
 }

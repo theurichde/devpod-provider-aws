@@ -23,7 +23,8 @@ GO_BUILD_CMD="go build"
 GO_BUILD_LDFLAGS="-s -w"
 
 if [[ -z "${PROVIDER_BUILD_PLATFORMS}" ]]; then
-    PROVIDER_BUILD_PLATFORMS="linux windows darwin"
+    PROVIDER_BUILD_PLATFORMS="linux"
+    #PROVIDER_BUILD_PLATFORMS="linux windows darwin" # TODO uncomment to build for all platforms
 fi
 
 if [[ -z "${PROVIDER_BUILD_ARCHS}" ]]; then
