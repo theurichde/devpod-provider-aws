@@ -11,8 +11,8 @@ import (
 
 var checksumMap = map[string]string{
 	"./release/devpod-provider-aws-linux-amd64": "##CHECKSUM_LINUX_AMD64##",
-	"./release/devpod-provider-aws-linux-arm64": "##CHECKSUM_LINUX_ARM64##",
 	// TODO Enable these once we have a proper release
+	//"./release/devpod-provider-aws-linux-arm64": "##CHECKSUM_LINUX_ARM64##",
 	//"./release/devpod-provider-aws-darwin-amd64":      "##CHECKSUM_DARWIN_AMD64##",
 	//"./release/devpod-provider-aws-darwin-arm64":      "##CHECKSUM_DARWIN_ARM64##",
 	//"./release/devpod-provider-aws-windows-amd64.exe": "##CHECKSUM_WINDOWS_AMD64##",

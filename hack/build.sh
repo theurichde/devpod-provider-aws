@@ -28,7 +28,8 @@ if [[ -z "${PROVIDER_BUILD_PLATFORMS}" ]]; then
 fi
 
 if [[ -z "${PROVIDER_BUILD_ARCHS}" ]]; then
-    PROVIDER_BUILD_ARCHS="amd64 arm64"
+    PROVIDER_BUILD_ARCHS="amd64"
+    # PROVIDER_BUILD_ARCHS="amd64 arm64" # TODO uncomment to build for all archs
 fi
 
 # Create the release directory
