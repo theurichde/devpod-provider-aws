@@ -67,7 +67,7 @@ func CreateDevpodVpc(ctx context.Context, provider *AwsProvider) (string, error)
 				Tags: []types.Tag{
 					{
 						Key:   aws.String("Name"),
-						Value: aws.String(fmt.Sprintf("devpod-%s", provider.Config.MachineID)),
+						Value: aws.String(fmt.Sprintf("devpod")),
 					},
 					{
 						Key:   aws.String("devpod"),
@@ -131,7 +131,7 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 				Tags: []types.Tag{
 					{
 						Key:   aws.String("devpod"),
-						Value: aws.String(provider.Config.MachineID),
+						Value: aws.String("devpod"),
 					},
 				},
 			},
@@ -257,7 +257,7 @@ func GetDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, err
 				Name:   aws.String("tag:Name"),
 				Values: []string{"devpod"},
 			},
-			// TODO filter for machineId specific subnet(s)
+			// TODO filter for machineId specific subnet(s)?
 		},
 	})
 	if err != nil {
