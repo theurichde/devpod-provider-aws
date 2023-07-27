@@ -8,21 +8,29 @@ optionGroups:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
       - AWS_PROFILE
+    name: "AWS Credentials"
+    defaultVisible: false
+  - options:
+      - AWS_REGION
       - AWS_AMI
       - AWS_DISK_SIZE
       - AWS_INSTANCE_TYPE
+      - AWS_INSTANCE_PROFILE_ARN
+      - AWS_USE_SPOT_INSTANCES
+    name: "AWS Options"
+    defaultVisible: false
+  - options:
       - AWS_VPC_ID
       - AWS_SUBNET_ID
       - AWS_SECURITY_GROUP_ID
-      - AWS_INSTANCE_PROFILE_ARN
-    name: "AWS options"
+    name: "AWS Network Options"
     defaultVisible: false
   - options:
       - AGENT_PATH
       - INACTIVITY_TIMEOUT
       - INJECT_DOCKER_CREDENTIALS
       - INJECT_GIT_CREDENTIALS
-    name: "Agent options"
+    name: "Agent Options"
     defaultVisible: false
 options:
   AWS_REGION:
@@ -65,15 +73,21 @@ options:
   AWS_VPC_ID:
     description: The vpc id to use.
     default: ""
+    required: false
   AWS_SUBNET_ID:
     description: The subnet id to use.
     default: ""
+    required: false
   AWS_SECURITY_GROUP_ID:
     description: The security group id to use.
     default: ""
+    required: false
   AWS_USE_SPOT_INSTANCES:
     description: Use spot instances
-    default: "false"
+    default: "true"
+    suggestions:
+      - true
+      - false
   AWS_AMI:
     description: The disk image to use.
     default: ""
@@ -227,16 +241,21 @@ options:
       - m7g.medium
       - m7g.xlarge
 
-
   INACTIVITY_TIMEOUT:
     description: If defined, will automatically stop the VM after the inactivity period.
     default: 10m
   INJECT_GIT_CREDENTIALS:
     description: "If DevPod should inject git credentials into the remote host."
     default: "true"
+    suggestions:
+      - true
+      - false
   INJECT_DOCKER_CREDENTIALS:
     description: "If DevPod should inject docker credentials into the remote host."
     default: "true"
+    suggestions:
+      - true
+      - false
   AGENT_PATH:
     description: The path where to inject the DevPod agent to.
     default: /var/lib/toolbox/devpod

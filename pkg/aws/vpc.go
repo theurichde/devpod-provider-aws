@@ -32,7 +32,7 @@ func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 
 	for _, vpc := range result.Vpcs {
 		for _, tag := range vpc.Tags {
-			if *tag.Key == "Name" && *tag.Value == "devpod" {
+			if *tag.Key == "Name" && strings.Contains(*tag.Value, "devpod") {
 				return *vpc.VpcId, nil
 			}
 		}
@@ -45,6 +45,7 @@ func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 		}
 	}
 
+	// TODO introduce option for creating a dedicated VPC
 	// No default VPC found, so we need to create one
 	vpc, err := CreateDevpodVpc(ctx, provider)
 	if err != nil {
@@ -148,9 +149,6 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 	if err != nil {
 		return "", err
 	}
-	ownIp = strings.TrimSpace(ownIp)
-	ownIp = strings.ReplaceAll(ownIp, "\n", "")
-	ownIp = ownIp + "/32"
 
 	// Add permissions to the security group
 	_, err = svc.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
@@ -198,7 +196,12 @@ func getLocalIP() (string, error) {
 		return "", err
 	}
 
-	return string(bodyBytes), nil
+	ownIp := string(bodyBytes)
+	ownIp = strings.TrimSpace(ownIp)
+	ownIp = strings.ReplaceAll(ownIp, "\n", "")
+	ownIp = ownIp + "/32"
+
+	return ownIp, nil
 }
 
 func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
