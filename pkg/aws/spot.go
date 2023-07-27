@@ -117,3 +117,32 @@ func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsPro
 
 	return result, nil
 }
+
+func DeleteSpotInstanceRequest(ctx context.Context, cfg aws.Config, machineID string) (*ec2.CancelSpotInstanceRequestsOutput, error) {
+
+	svc := ec2.NewFromConfig(cfg)
+
+	requests := ec2.DescribeSpotInstanceRequestsInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("tag:devpod"),
+				Values: []string{machineID},
+			},
+			{
+				Name:   aws.String("state"),
+				Values: []string{"active"},
+			},
+		},
+	}
+
+	cancel := ec2.CancelSpotInstanceRequestsInput{
+		SpotInstanceRequestIds: requests.SpotInstanceRequestIds,
+		DryRun:                 aws.Bool(false),
+	}
+
+	response, err := svc.CancelSpotInstanceRequests(ctx, &cancel)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}

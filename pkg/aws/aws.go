@@ -478,7 +478,7 @@ func Status(ctx context.Context, cfg aws.Config, name string) (client.Status, er
 	}
 }
 
-func Delete(ctx context.Context, cfg aws.Config, instanceID string) error {
+func Delete(ctx context.Context, cfg aws.Config, instanceID string, machineID string) error {
 	svc := ec2.NewFromConfig(cfg)
 
 	input := &ec2.TerminateInstancesInput{
@@ -491,6 +491,10 @@ func Delete(ctx context.Context, cfg aws.Config, instanceID string) error {
 	if err != nil {
 		return err
 	}
+
+	_, err = DeleteSpotInstanceRequest(ctx, cfg, machineID)
+
+	// TODO: Delete VPC too
 
 	return err
 }
