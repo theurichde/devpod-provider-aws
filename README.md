@@ -1,8 +1,12 @@
 # AWS Provider for DevPod
 
+**Work in Progress**
+
+This Provider enhances the original one with the capability to run your devpod machine on an AWS Spot Instance
+
 ## Getting started
 
-The provider is available for auto-installation using 
+~The provider is available for auto-installation using~
 
 ```sh
 devpod provider add aws

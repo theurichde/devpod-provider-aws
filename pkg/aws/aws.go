@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/loft-sh/devpod/pkg/client"
@@ -31,7 +32,7 @@ func NewProvider(ctx context.Context, logs log.Logger) (*AwsProvider, error) {
 	}
 
 	if config.DiskImage == "" {
-		image, err := GetDefaultAMI(ctx, cfg)
+		image, err := GetDefaultAMI(ctx, cfg, config.MachineType)
 		if err != nil {
 			return nil, err
 		}
@@ -55,8 +56,15 @@ type AwsProvider struct {
 	WorkingDirectory string
 }
 
-func GetDefaultAMI(ctx context.Context, cfg aws.Config) (string, error) {
+func GetDefaultAMI(ctx context.Context, cfg aws.Config, instanceType string) (string, error) {
 	svc := ec2.NewFromConfig(cfg)
+
+	architecture := "x86_64"
+	// Graviton instances terminate with g
+	if strings.HasSuffix(strings.Split(instanceType, ".")[0], "g") {
+		architecture = "arm64"
+	}
+
 	input := &ec2.DescribeImagesInput{
 		Owners: []string{
 			"amazon",
@@ -67,6 +75,12 @@ func GetDefaultAMI(ctx context.Context, cfg aws.Config) (string, error) {
 				Name: aws.String("virtualization-type"),
 				Values: []string{
 					"hvm",
+				},
+			},
+			{
+				Name: aws.String("architecture"),
+				Values: []string{
+					architecture,
 				},
 			},
 			{
@@ -84,7 +98,7 @@ func GetDefaultAMI(ctx context.Context, cfg aws.Config) (string, error) {
 			{
 				Name: aws.String("description"),
 				Values: []string{
-					"Canonical, Ubuntu, 22.04 LTS, amd64 jammy image build*",
+					"Canonical, Ubuntu, 22.04 LTS*",
 				},
 			},
 		},
