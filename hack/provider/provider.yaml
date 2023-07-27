@@ -86,8 +86,8 @@ options:
     description: Use spot instances
     default: "true"
     suggestions:
-      - true
-      - false
+      - "true"
+      - "false"
   AWS_AMI:
     description: The disk image to use.
     default: ""
@@ -248,14 +248,14 @@ options:
     description: "If DevPod should inject git credentials into the remote host."
     default: "true"
     suggestions:
-      - true
-      - false
+      - "true"
+      - "false"
   INJECT_DOCKER_CREDENTIALS:
     description: "If DevPod should inject docker credentials into the remote host."
     default: "true"
     suggestions:
-      - true
-      - false
+      - "true"
+      - "false"
   AGENT_PATH:
     description: The path where to inject the DevPod agent to.
     default: /var/lib/toolbox/devpod
