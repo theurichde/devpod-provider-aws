@@ -82,6 +82,8 @@ func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsPro
 
 	var instanceId string
 	for {
+		// wait a second for the spot instance request to be available
+		time.Sleep(1 * time.Second)
 		instanceRequests, err := svc.DescribeSpotInstanceRequests(ctx, &ec2.DescribeSpotInstanceRequestsInput{
 			SpotInstanceRequestIds: []string{*result.SpotInstanceRequests[0].SpotInstanceRequestId},
 		})
@@ -114,56 +116,4 @@ func CreateSpotInstance(ctx context.Context, cfg aws.Config, providerAws *AwsPro
 	}
 
 	return result, nil
-}
-
-func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
-	svc := ec2.NewFromConfig(providerAws.AwsConfig)
-
-	vpc, err := GetDevpodVPC(ctx, providerAws)
-	if err != nil {
-		return "", err
-	}
-
-	subnet, err := svc.CreateSubnet(ctx, &ec2.CreateSubnetInput{
-		CidrBlock: aws.String("10.0.0.0/24"),
-		VpcId:     aws.String(vpc),
-		TagSpecifications: []types.TagSpecification{
-			{
-				ResourceType: types.ResourceTypeSubnet,
-				Tags: []types.Tag{
-					{
-						Key:   aws.String("Name"),
-						Value: aws.String("devpod"),
-					},
-				},
-			},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-	return *subnet.Subnet.SubnetId, nil
-}
-
-func GetDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
-	svc := ec2.NewFromConfig(providerAws.AwsConfig)
-
-	subnets, err := svc.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
-		Filters: []types.Filter{
-			{
-				Name:   aws.String("tag:Name"),
-				Values: []string{"devpod"},
-			},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	if len(subnets.Subnets) == 0 {
-		return "", fmt.Errorf("no devpod subnet found")
-	}
-
-	return *subnets.Subnets[0].SubnetId, nil
-
 }

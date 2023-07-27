@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 
 	"github.com/loft-sh/devpod-provider-aws/pkg/options"
-	"github.com/pkg/errors"
 )
 
 func NewProvider(ctx context.Context, logs log.Logger) (*AwsProvider, error) {
@@ -54,46 +53,6 @@ type AwsProvider struct {
 	AwsConfig        aws.Config
 	Log              log.Logger
 	WorkingDirectory string
-}
-
-func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
-	if provider.Config.VpcID != "" {
-		return provider.Config.VpcID, nil
-	}
-
-	// Get a list of VPCs, so we can associate the group with the first VPC.
-	svc := ec2.NewFromConfig(provider.AwsConfig)
-	result, err := svc.DescribeVpcs(ctx, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if len(result.Vpcs) == 0 {
-		return "", errors.New("There are no VPCs to associate with")
-	}
-
-	for _, vpc := range result.Vpcs {
-		for _, tag := range vpc.Tags {
-			if *tag.Key == "Name" && *tag.Value == "devpod" {
-				return *vpc.VpcId, nil
-			}
-		}
-	}
-
-	// No dedicated devpod VPC found, so we need to find a default vpc
-	for _, vpc := range result.Vpcs {
-		if *vpc.IsDefault {
-			return *vpc.VpcId, nil
-		}
-	}
-
-	// No default VPC found, so we need to create one
-	vpc, err := CreateDevpodVpc(ctx, provider)
-	if err != nil {
-		return "", err
-	}
-
-	return vpc, nil
 }
 
 func GetDefaultAMI(ctx context.Context, cfg aws.Config) (string, error) {
@@ -263,123 +222,6 @@ func CreateDevpodInstanceProfile(ctx context.Context, provider *AwsProvider) (st
 	time.Sleep(time.Second * 10)
 
 	return *response.InstanceProfile.Arn, nil
-}
-
-func GetDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string, error) {
-	if provider.Config.SecurityGroupID != "" {
-		return provider.Config.SecurityGroupID, nil
-	}
-
-	svc := ec2.NewFromConfig(provider.AwsConfig)
-	input := &ec2.DescribeSecurityGroupsInput{
-		Filters: []types.Filter{
-			{
-				Name: aws.String("tag:devpod"),
-				Values: []string{
-					"devpod",
-				},
-			},
-		},
-	}
-
-	result, err := svc.DescribeSecurityGroups(ctx, input)
-	// If it is not created, do it
-	if len(result.SecurityGroups) == 0 || err != nil {
-		return CreateDevpodSecurityGroup(ctx, provider)
-	}
-
-	return *result.SecurityGroups[0].GroupId, nil
-}
-
-func CreateDevpodVpc(ctx context.Context, provider *AwsProvider) (string, error) {
-	svc := ec2.NewFromConfig(provider.AwsConfig)
-	input := &ec2.CreateVpcInput{
-		CidrBlock:                   aws.String("10.0.0.0/16"),
-		AmazonProvidedIpv6CidrBlock: aws.Bool(true),
-		TagSpecifications: []types.TagSpecification{
-			{
-				ResourceType: types.ResourceTypeVpc,
-				Tags: []types.Tag{
-					{
-						Key:   aws.String("Name"),
-						Value: aws.String("devpod"),
-					},
-				},
-			},
-		},
-	}
-	vpc, err := svc.CreateVpc(ctx, input)
-	if err != nil {
-		return "", err
-	}
-	return *vpc.Vpc.VpcId, nil
-}
-
-func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string, error) {
-	var err error
-
-	svc := ec2.NewFromConfig(provider.AwsConfig)
-	vpc, err := GetDevpodVPC(ctx, provider)
-	if err != nil {
-		return "", err
-	}
-
-	// Create the security group with the VPC, name, and description.
-	result, err := svc.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
-		GroupName:   aws.String("devpod"),
-		Description: aws.String("Default Security Group for DevPod"),
-		TagSpecifications: []types.TagSpecification{
-			{
-				ResourceType: "security-group",
-				Tags: []types.Tag{
-					{
-						Key:   aws.String("devpod"),
-						Value: aws.String("devpod"),
-					},
-				},
-			},
-		},
-		VpcId: aws.String(vpc),
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	groupID := *result.GroupId
-
-	// Add permissions to the security group
-	_, err = svc.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-		GroupId: aws.String(groupID),
-		IpPermissions: []types.IpPermission{
-			{
-				IpProtocol: aws.String("tcp"),
-				FromPort:   aws.Int32(22),
-				ToPort:     aws.Int32(22),
-				IpRanges: []types.IpRange{
-					{
-						CidrIp: aws.String("0.0.0.0/0"),
-					},
-				},
-			},
-		},
-		TagSpecifications: []types.TagSpecification{
-			{
-				ResourceType: "security-group-rule",
-				Tags: []types.Tag{
-					{
-						Key:   aws.String("devpod"),
-						Value: aws.String("devpod-ingress"),
-					},
-				},
-			},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return groupID, nil
 }
 
 func GetDevpodInstance(ctx context.Context, cfg aws.Config, name string) (*ec2.DescribeInstancesOutput, error) {
