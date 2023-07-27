@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // GetDevpodVPC retrieves the VPC ID for the devpod VPC.
@@ -147,6 +148,9 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 	if err != nil {
 		return "", err
 	}
+	ownIp = strings.TrimSpace(ownIp)
+	ownIp = strings.ReplaceAll(ownIp, "\n", "")
+	ownIp = ownIp + "/32"
 
 	// Add permissions to the security group
 	_, err = svc.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
@@ -158,7 +162,7 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 				ToPort:     aws.Int32(22),
 				IpRanges: []types.IpRange{
 					{
-						CidrIp: aws.String(ownIp + "/32"),
+						CidrIp: aws.String(ownIp),
 					},
 				},
 			},
