@@ -3,21 +3,22 @@ package aws
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/loft-sh/devpod/pkg/client"
-	"github.com/loft-sh/devpod/pkg/log"
-	"github.com/loft-sh/devpod/pkg/ssh"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-
 	"github.com/loft-sh/devpod-provider-aws/pkg/options"
+	"github.com/loft-sh/devpod/pkg/client"
+	"github.com/loft-sh/devpod/pkg/log"
+	"github.com/loft-sh/devpod/pkg/ssh"
+	"github.com/pkg/errors"
 )
 
 func NewProvider(ctx context.Context, logs log.Logger) (*AwsProvider, error) {
@@ -36,6 +37,7 @@ func NewProvider(ctx context.Context, logs log.Logger) (*AwsProvider, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		config.DiskImage = image
 	}
 
@@ -54,6 +56,93 @@ type AwsProvider struct {
 	AwsConfig        aws.Config
 	Log              log.Logger
 	WorkingDirectory string
+}
+
+func GetSubnetID(ctx context.Context, provider *AwsProvider) (string, error) {
+	svc := ec2.NewFromConfig(provider.AwsConfig)
+
+	// first search for a default devpod specific subnet, if it fails
+	// we search the subnet with most free IPs that can do also public-ipv4
+	input := &ec2.DescribeSubnetsInput{
+		Filters: []types.Filter{
+			{
+				Name: aws.String("tag:devpod"),
+				Values: []string{
+					"devpod",
+				},
+			},
+		},
+	}
+
+	result, err := svc.DescribeSubnets(ctx, input)
+	if err != nil {
+		return "", err
+	}
+
+	if len(result.Subnets) > 0 {
+		return *result.Subnets[0].SubnetId, nil
+	}
+
+	input = &ec2.DescribeSubnetsInput{
+		Filters: []types.Filter{
+			{
+				Name: aws.String("vpc-id"),
+				Values: []string{
+					provider.Config.VpcID,
+				},
+			},
+			{
+				Name: aws.String("map-public-ip-on-launch"),
+				Values: []string{
+					"true",
+				},
+			},
+		},
+	}
+
+	result, err = svc.DescribeSubnets(ctx, input)
+	if err != nil {
+		return "", err
+	}
+
+	var maxIPCount int32
+
+	subnetID := ""
+
+	for _, v := range result.Subnets {
+		if *v.AvailableIpAddressCount > maxIPCount {
+			maxIPCount = *v.AvailableIpAddressCount
+			subnetID = *v.SubnetId
+		}
+	}
+
+	return subnetID, nil
+}
+
+func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
+	if provider.Config.VpcID != "" {
+		return provider.Config.VpcID, nil
+	}
+	// Get a list of VPCs so we can associate the group with the first VPC.
+	svc := ec2.NewFromConfig(provider.AwsConfig)
+
+	result, err := svc.DescribeVpcs(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if len(result.Vpcs) == 0 {
+		return "", errors.New("There are no VPCs to associate with")
+	}
+
+	// We need to find a default vpc
+	for _, vpc := range result.Vpcs {
+		if *vpc.IsDefault {
+			return *vpc.VpcId, nil
+		}
+	}
+
+	return "", nil
 }
 
 func GetDefaultAMI(ctx context.Context, cfg aws.Config, instanceType string) (string, error) {
@@ -119,6 +208,7 @@ func GetDefaultAMI(ctx context.Context, cfg aws.Config, instanceType string) (st
 		if err != nil {
 			return false
 		}
+
 		return iTime.After(jTime)
 	})
 
@@ -232,13 +322,119 @@ func CreateDevpodInstanceProfile(ctx context.Context, provider *AwsProvider) (st
 	}
 
 	// TODO: need to find a better way to ensure
-	// role/profile propagation has succeded
+	// role/profile propagation has succeeded
 	time.Sleep(time.Second * 10)
 
 	return *response.InstanceProfile.Arn, nil
 }
 
-func GetDevpodInstance(ctx context.Context, cfg aws.Config, name string) (*ec2.DescribeInstancesOutput, error) {
+func GetDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string, error) {
+	if provider.Config.SecurityGroupID != "" {
+		return provider.Config.SecurityGroupID, nil
+	}
+
+	svc := ec2.NewFromConfig(provider.AwsConfig)
+	input := &ec2.DescribeSecurityGroupsInput{
+		Filters: []types.Filter{
+			{
+				Name: aws.String("tag:devpod"),
+				Values: []string{
+					"devpod",
+				},
+			},
+		},
+	}
+
+	if provider.Config.VpcID != "" {
+		input.Filters = append(input.Filters, types.Filter{
+			Name: aws.String("vpc-id"),
+			Values: []string{
+				provider.Config.VpcID,
+			},
+		})
+	}
+
+	result, err := svc.DescribeSecurityGroups(ctx, input)
+	// It it is not created, do it
+	if len(result.SecurityGroups) == 0 || err != nil {
+		return CreateDevpodSecurityGroup(ctx, provider)
+	}
+
+	return *result.SecurityGroups[0].GroupId, nil
+}
+
+func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string, error) {
+	var err error
+
+	svc := ec2.NewFromConfig(provider.AwsConfig)
+
+	vpc, err := GetDevpodVPC(ctx, provider)
+	if err != nil {
+		return "", err
+	}
+
+	// Create the security group with the VPC, name, and description.
+	result, err := svc.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:   aws.String("devpod"),
+		Description: aws.String("Default Security Group for DevPod"),
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: "security-group",
+				Tags: []types.Tag{
+					{
+						Key:   aws.String("devpod"),
+						Value: aws.String("devpod"),
+					},
+				},
+			},
+		},
+		VpcId: aws.String(vpc),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	groupID := *result.GroupId
+
+	// Add permissions to the security group
+	_, err = svc.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+		GroupId: aws.String(groupID),
+		IpPermissions: []types.IpPermission{
+			{
+				IpProtocol: aws.String("tcp"),
+				FromPort:   aws.Int32(22),
+				ToPort:     aws.Int32(22),
+				IpRanges: []types.IpRange{
+					{
+						CidrIp: aws.String("0.0.0.0/0"),
+					},
+				},
+			},
+		},
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: "security-group-rule",
+				Tags: []types.Tag{
+					{
+						Key:   aws.String("devpod"),
+						Value: aws.String("devpod-ingress"),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return groupID, nil
+}
+
+func GetDevpodInstance(
+	ctx context.Context,
+	cfg aws.Config,
+	name string,
+) (*ec2.DescribeInstancesOutput, error) {
 	svc := ec2.NewFromConfig(cfg)
 
 	input := &ec2.DescribeInstancesInput{
@@ -355,7 +551,48 @@ func GetDevpodRunningInstance(
 	return result, nil
 }
 
-func Create(ctx context.Context, cfg aws.Config, providerAws *AwsProvider) (*ec2.RunInstancesOutput, error) {
+func GetInstanceTags(providerAws *AwsProvider) []types.TagSpecification {
+	result := []types.TagSpecification{
+		{
+			ResourceType: "instance",
+			Tags: []types.Tag{
+				{
+					Key:   aws.String("devpod"),
+					Value: aws.String(providerAws.Config.MachineID),
+				},
+			},
+		},
+	}
+
+	reg := regexp.MustCompile(`Name=(\w+),Value=(\w+)`)
+
+	tagList := reg.FindAllString(providerAws.Config.InstanceTags, -1)
+	if tagList == nil {
+		return result
+	}
+
+	for _, tag := range tagList {
+		tagSplit := strings.Split(tag, ",")
+
+		name := strings.ReplaceAll(tagSplit[0], "Name=", "")
+		value := strings.ReplaceAll(tagSplit[1], "Value=", "")
+
+		tagSpec := types.Tag{
+			Key:   aws.String(name),
+			Value: aws.String(value),
+		}
+
+		result[0].Tags = append(result[0].Tags, tagSpec)
+	}
+
+	return result
+}
+
+func Create(
+	ctx context.Context,
+	cfg aws.Config,
+	providerAws *AwsProvider,
+) (*ec2.RunInstancesOutput, error) {
 	svc := ec2.NewFromConfig(cfg)
 
 	devpodSG, err := GetDevpodSecurityGroup(ctx, providerAws)
@@ -386,18 +623,8 @@ func Create(ctx context.Context, cfg aws.Config, providerAws *AwsProvider) (*ec2
 				},
 			},
 		},
-		TagSpecifications: []types.TagSpecification{
-			{
-				ResourceType: "instance",
-				Tags: []types.Tag{
-					{
-						Key:   aws.String("devpod"),
-						Value: aws.String(providerAws.Config.MachineID),
-					},
-				},
-			},
-		},
-		UserData: &userData,
+		TagSpecifications: GetInstanceTags(providerAws),
+		UserData:          &userData,
 	}
 
 	profile, err := GetDevpodInstanceProfile(ctx, providerAws)
@@ -407,12 +634,24 @@ func Create(ctx context.Context, cfg aws.Config, providerAws *AwsProvider) (*ec2
 		}
 	}
 
+	if providerAws.Config.VpcID != "" && providerAws.Config.SubnetID == "" {
+		subnetID, err := GetSubnetID(ctx, providerAws)
+		if err != nil {
+			return nil, err
+		}
+
+		if subnetID == "" {
+			return nil, fmt.Errorf("could not find a matching SubnetID in VPC %s, please specify one", providerAws.Config.VpcID)
+		}
+
+		instance.SubnetId = &subnetID
+	}
+
 	if providerAws.Config.SubnetID != "" {
 		instance.SubnetId = &providerAws.Config.SubnetID
 	}
 
 	result, err := svc.RunInstances(ctx, instance)
-
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +717,7 @@ func Status(ctx context.Context, cfg aws.Config, name string) (client.Status, er
 	}
 }
 
-func Delete(ctx context.Context, cfg aws.Config, instanceID string, machineID string) error {
+func Delete(ctx context.Context, cfg aws.Config, instanceID string) error {
 	svc := ec2.NewFromConfig(cfg)
 
 	input := &ec2.TerminateInstancesInput{
@@ -491,10 +730,6 @@ func Delete(ctx context.Context, cfg aws.Config, instanceID string, machineID st
 	if err != nil {
 		return err
 	}
-
-	_, err = DeleteSpotInstanceRequest(ctx, cfg, machineID)
-
-	// TODO: Delete VPC too
 
 	return err
 }
