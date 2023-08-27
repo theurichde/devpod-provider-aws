@@ -27,7 +27,7 @@ optionGroups:
       - AWS_VPC_ID
       - AWS_SUBNET_ID
       - AWS_SECURITY_GROUP_ID
-  - name: "Agent Options":
+  - name: "Agent Options"
     defaultVisible: false
     options:
       - AGENT_PATH
