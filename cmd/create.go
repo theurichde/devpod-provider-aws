@@ -43,19 +43,13 @@ func (cmd *CreateCmd) Run(
 	machine *provider.Machine,
 	logs log.Logger,
 ) error {
-	// Ensure DevPod security group is created
-	_, err := aws.GetDevpodSecurityGroup(ctx, providerAws)
-	if err != nil {
-		return err
-	}
-
 	if providerAws.Config.UseSpot {
-		_, err = aws.CreateSpotInstance(ctx, providerAws.AwsConfig, providerAws)
+		_, err := aws.CreateSpotInstance(ctx, providerAws.AwsConfig, providerAws)
 		if err != nil {
 			return err
 		}
 	} else {
-		_, err = aws.Create(ctx, providerAws.AwsConfig, providerAws)
+		_, err := aws.Create(ctx, providerAws.AwsConfig, providerAws)
 		if err != nil {
 			return err
 		}

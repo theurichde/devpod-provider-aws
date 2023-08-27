@@ -5,13 +5,15 @@ description: |-
 icon: https://devpod.sh/assets/aws.svg
 iconDark: https://devpod.sh/assets/aws_dark.svg
 optionGroups:
-  - options:
+  - name: "AWS Credentials"
+    defaultVisible: false
+    options:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
       - AWS_PROFILE
-    name: "AWS Credentials"
+  - name: "AWS Credentials"
     defaultVisible: false
-  - options:
+    options:
       - AWS_REGION
       - AWS_AMI
       - AWS_DISK_SIZE
@@ -19,21 +21,19 @@ optionGroups:
       - AWS_INSTANCE_PROFILE_ARN
       - AWS_INSTANCE_TAGS
       - AWS_USE_SPOT_INSTANCES
-    name: "AWS Options"
+  - name: "AWS Network Options"
     defaultVisible: false
-  - options:
+    options:
       - AWS_VPC_ID
       - AWS_SUBNET_ID
       - AWS_SECURITY_GROUP_ID
-    name: "AWS Network Options"
+  - name: "Agent Options":
     defaultVisible: false
-  - options:
+    options:
       - AGENT_PATH
       - INACTIVITY_TIMEOUT
       - INJECT_DOCKER_CREDENTIALS
       - INJECT_GIT_CREDENTIALS
-    name: "Agent Options"
-    defaultVisible: false
 options:
   AWS_REGION:
     suggestions:
@@ -84,6 +84,13 @@ options:
     description: The security group id to use.
     default: ""
     required: false
+  AWS_CREATE_VPC:
+    description: Create a dedicated devpod VPC
+    default: "false"
+    suggestions:
+      - "true"
+      - "false"
+    required: false
   AWS_USE_SPOT_INSTANCES:
     description: Use spot instances
     default: "true"
@@ -107,25 +114,21 @@ options:
       - t2.2xlarge
       - t2.large
       - t2.medium
-      - t2.nano
       - t2.small
       - t2.xlarge
       - t3.2xlarge
       - t3.large
       - t3.medium
-      - t3.nano
       - t3.small
       - t3.xlarge
       - t3a.2xlarge
       - t3a.large
       - t3a.medium
-      - t3a.nano
       - t3a.small
       - t3a.xlarge
       - t4g.2xlarge
       - t4g.large
       - t4g.medium
-      - t4g.nano
       - t4g.small
       - t4g.xlarge
       - c4.2xlarge
@@ -242,7 +245,6 @@ options:
       - m7g.large
       - m7g.medium
       - m7g.xlarge
-
   INACTIVITY_TIMEOUT:
     description: If defined, will automatically stop the VM after the inactivity period.
     default: 10m
@@ -270,11 +272,11 @@ agent:
     AWS_PROVIDER:
       - os: linux
         arch: amd64
-        path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
+        path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
         checksum: ##CHECKSUM_LINUX_AMD64##
       - os: linux
         arch: arm64
-        path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
+        path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
         checksum: ##CHECKSUM_LINUX_ARM64##
   exec:
     shutdown: |-
@@ -283,24 +285,24 @@ binaries:
   AWS_PROVIDER:
     - os: linux
       arch: amd64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
+      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
       checksum: ##CHECKSUM_LINUX_AMD64##
-    - os: linux
-      arch: arm64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
-      checksum: ##CHECKSUM_LINUX_ARM64##
-    - os: darwin
-      arch: amd64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-amd64
-      checksum: ##CHECKSUM_DARWIN_AMD64##
-    - os: darwin
-      arch: arm64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-arm64
-      checksum: ##CHECKSUM_DARWIN_ARM64##
-    - os: windows
-      arch: amd64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-windows-amd64.exe
-      checksum: ##CHECKSUM_WINDOWS_AMD64##
+#    - os: linux
+#      arch: arm64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
+#      checksum: ##CHECKSUM_LINUX_ARM64##
+#    - os: darwin
+#      arch: amd64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-amd64
+#      checksum: ##CHECKSUM_DARWIN_AMD64##
+#    - os: darwin
+#      arch: arm64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-arm64
+#      checksum: ##CHECKSUM_DARWIN_ARM64##
+#    - os: windows
+#      arch: amd64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-windows-amd64.exe
+#      checksum: ##CHECKSUM_WINDOWS_AMD64##
 exec:
   init: ${AWS_PROVIDER} init
   command: ${AWS_PROVIDER} command

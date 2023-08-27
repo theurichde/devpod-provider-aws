@@ -17,6 +17,7 @@ var (
 	AWS_INSTANCE_TAGS        = "AWS_INSTANCE_TAGS"
 	AWS_INSTANCE_PROFILE_ARN = "AWS_INSTANCE_PROFILE_ARN"
 	AWS_USE_SPOT_INSTANCES   = "AWS_USE_SPOT_INSTANCES"
+	AWS_CREATE_VPC           = "AWS_CREATE_VPC"
 )
 
 type Options struct {
@@ -32,6 +33,7 @@ type Options struct {
 	InstanceTags       string
 	Zone               string
 	UseSpot            bool
+	CreateVpc          bool
 }
 
 func FromEnv(init bool) (*Options, error) {
@@ -63,6 +65,8 @@ func FromEnv(init bool) (*Options, error) {
 	retOptions.Zone = os.Getenv(AWS_REGION)
 	useSpot, _ := strconv.ParseBool(os.Getenv(AWS_USE_SPOT_INSTANCES))
 	retOptions.UseSpot = useSpot
+	createVpc, _ := strconv.ParseBool(os.Getenv(AWS_CREATE_VPC))
+	retOptions.CreateVpc = createVpc
 
 	// Return early if we're just doing init
 	if init {

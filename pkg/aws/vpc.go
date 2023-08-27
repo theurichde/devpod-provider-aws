@@ -7,13 +7,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"io"
-	"net/http"
 	"strings"
 )
 
 // GetDevpodVPC retrieves the VPC ID for the devpod VPC.
-// If it doesn't exist, it takes the default VPC, otherwise it creates a dedicated devpod VPC
+// If it doesn't exist, we check if we want to create a dedicated VPC, otherwise it tries to take the default VPC
 func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 	if provider.Config.VpcID != "" {
 		return provider.Config.VpcID, nil
@@ -38,6 +36,14 @@ func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 		}
 	}
 
+	if provider.Config.CreateVpc {
+		vpc, err := CreateDevpodVpc(ctx, provider)
+		if err != nil {
+			return "", err
+		}
+		return vpc, nil
+	}
+
 	// No dedicated devpod VPC found, so we need to find a default vpc
 	for _, vpc := range result.Vpcs {
 		if *vpc.IsDefault {
@@ -45,17 +51,10 @@ func GetDevpodVPC(ctx context.Context, provider *AwsProvider) (string, error) {
 		}
 	}
 
-	// TODO introduce option for creating a dedicated VPC
-	// No default VPC found, so we need to create one
-	vpc, err := CreateDevpodVpc(ctx, provider)
-	if err != nil {
-		return "", err
-	}
-
-	return vpc, nil
+	return "", errors.New("no suitable VPC found")
 }
 
-// CreateDevpodVpc creates a new VPC for devpod dedicated to the machine ID
+// CreateDevpodVpc creates a new VPC for devpod
 func CreateDevpodVpc(ctx context.Context, provider *AwsProvider) (string, error) {
 	svc := ec2.NewFromConfig(provider.AwsConfig)
 	input := &ec2.CreateVpcInput{
@@ -68,10 +67,6 @@ func CreateDevpodVpc(ctx context.Context, provider *AwsProvider) (string, error)
 					{
 						Key:   aws.String("Name"),
 						Value: aws.String(fmt.Sprintf("devpod")),
-					},
-					{
-						Key:   aws.String("devpod"),
-						Value: aws.String(provider.Config.MachineID),
 					},
 				},
 			},
@@ -101,6 +96,15 @@ func GetDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string,
 		},
 	}
 
+	if provider.Config.VpcID != "" {
+		input.Filters = append(input.Filters, types.Filter{
+			Name: aws.String("vpc-id"),
+			Values: []string{
+				provider.Config.VpcID,
+			},
+		})
+	}
+
 	result, err := svc.DescribeSecurityGroups(ctx, input)
 	// If it is not created, do it
 	if len(result.SecurityGroups) == 0 || err != nil {
@@ -110,8 +114,6 @@ func GetDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string,
 	return *result.SecurityGroups[0].GroupId, nil
 }
 
-// CreateDevpodSecurityGroup creates a new (paranoid) security group for devpod dedicated
-// to the machine ID and opens port 22 to the current IP
 func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (string, error) {
 	var err error
 
@@ -138,17 +140,11 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 		},
 		VpcId: aws.String(vpc),
 	})
-
 	if err != nil {
 		return "", err
 	}
 
 	groupID := *result.GroupId
-
-	ownIp, err := getLocalIP()
-	if err != nil {
-		return "", err
-	}
 
 	// Add permissions to the security group
 	_, err = svc.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
@@ -160,7 +156,7 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 				ToPort:     aws.Int32(22),
 				IpRanges: []types.IpRange{
 					{
-						CidrIp: aws.String(ownIp),
+						CidrIp: aws.String("0.0.0.0/0"),
 					},
 				},
 			},
@@ -184,26 +180,7 @@ func CreateDevpodSecurityGroup(ctx context.Context, provider *AwsProvider) (stri
 	return groupID, nil
 }
 
-func getLocalIP() (string, error) {
-	resp, err := http.Get("https://checkip.amazonaws.com")
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	ownIp := string(bodyBytes)
-	ownIp = strings.TrimSpace(ownIp)
-	ownIp = strings.ReplaceAll(ownIp, "\n", "")
-	ownIp = ownIp + "/32"
-
-	return ownIp, nil
-}
-
+// TODO Route Table Internet Gateway and Subnet Association needed
 func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
 	svc := ec2.NewFromConfig(providerAws.AwsConfig)
 
@@ -231,6 +208,7 @@ func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, 
 			},
 		},
 	})
+
 	if err != nil {
 		return "", err
 	}
@@ -245,7 +223,106 @@ func CreateDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, 
 		return "", err
 	}
 
+	routeTable, err := svc.CreateRouteTable(ctx, &ec2.CreateRouteTableInput{
+		VpcId: aws.String(vpc),
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: types.ResourceTypeRouteTable,
+				Tags: []types.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String("devpod"),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	_, err = svc.AssociateRouteTable(ctx, &ec2.AssociateRouteTableInput{
+		SubnetId:     subnet.Subnet.SubnetId,
+		RouteTableId: routeTable.RouteTable.RouteTableId,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	_, err = svc.CreateRoute(ctx, &ec2.CreateRouteInput{
+		DestinationCidrBlock: subnet.Subnet.CidrBlock,
+		RouteTableId:         routeTable.RouteTable.RouteTableId,
+	})
+	if err != nil {
+		return "", err
+	}
+
 	return *subnet.Subnet.SubnetId, nil
+}
+
+func GetSubnetID(ctx context.Context, provider *AwsProvider) (string, error) {
+	if provider.Config.SubnetID != "" {
+		return provider.Config.SubnetID, nil
+	}
+
+	svc := ec2.NewFromConfig(provider.AwsConfig)
+
+	// first search for a default devpod specific subnet, if it fails
+	// we search the subnet with most free IPs that can do also public-ipv4
+	input := &ec2.DescribeSubnetsInput{
+		Filters: []types.Filter{
+			{
+				Name: aws.String("tag:devpod"),
+				Values: []string{
+					"devpod",
+				},
+			},
+		},
+	}
+
+	result, err := svc.DescribeSubnets(ctx, input)
+	if err != nil {
+		return "", err
+	}
+
+	if len(result.Subnets) > 0 {
+		return *result.Subnets[0].SubnetId, nil
+	}
+
+	input = &ec2.DescribeSubnetsInput{
+		Filters: []types.Filter{
+			{
+				Name: aws.String("vpc-id"),
+				Values: []string{
+					provider.Config.VpcID,
+				},
+			},
+			{
+				Name: aws.String("map-public-ip-on-launch"),
+				Values: []string{
+					"true",
+				},
+			},
+		},
+	}
+
+	result, err = svc.DescribeSubnets(ctx, input)
+	if err != nil {
+		return "", err
+	}
+
+	var maxIPCount int32
+
+	subnetID := ""
+
+	for _, v := range result.Subnets {
+		if *v.AvailableIpAddressCount > maxIPCount {
+			maxIPCount = *v.AvailableIpAddressCount
+			subnetID = *v.SubnetId
+		}
+	}
+
+	return subnetID, nil
 }
 
 func GetDevpodSubnet(ctx context.Context, providerAws *AwsProvider) (string, error) {
