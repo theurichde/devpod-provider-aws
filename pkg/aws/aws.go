@@ -492,8 +492,8 @@ func Delete(ctx context.Context, cfg aws.Config, instanceID string, machineID st
 		return err
 	}
 
-	_, err = DeleteSpotInstanceRequest(ctx, cfg, machineID)
-
+	// _, err = DeleteSpotInstanceRequest(ctx, cfg, machineID)
+	// TODO: Delete Spot Instance Request too
 	// TODO: Delete VPC too
 
 	return err

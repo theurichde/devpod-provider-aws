@@ -40,12 +40,7 @@ func NewCommandCmd() *cobra.Command {
 }
 
 // Run runs the command logic
-func (cmd *CommandCmd) Run(
-	ctx context.Context,
-	providerAws *aws.AwsProvider,
-	machine *provider.Machine,
-	logs log.Logger,
-) error {
+func (cmd *CommandCmd) Run(ctx context.Context, providerAws *aws.AwsProvider, machine *provider.Machine, logs log.Logger) error {
 	command := os.Getenv("COMMAND")
 	if command == "" {
 		return fmt.Errorf("command environment variable is missing")
@@ -58,35 +53,41 @@ func (cmd *CommandCmd) Run(
 	}
 
 	// get instance
-	instance, err := aws.GetDevpodRunningInstance(ctx, providerAws.AwsConfig, providerAws.Config.MachineID)
+	instance, err := aws.GetDevpodRunningInstance(
+		ctx,
+		providerAws.AwsConfig,
+		providerAws.Config.MachineID,
+	)
 	if err != nil {
 		return err
 	} else if len(instance.Reservations) == 0 {
 		return fmt.Errorf("instance %s doesn't exist", providerAws.Config.MachineID)
 	}
 
-	// try private ip
-	if instance.Reservations[0].Instances[0].PrivateIpAddress != nil {
-		ip := *instance.Reservations[0].Instances[0].PrivateIpAddress
+	// try public ip
+	if instance.Reservations[0].Instances[0].PublicIpAddress != nil {
+		ip := *instance.Reservations[0].Instances[0].PublicIpAddress
+
 		sshClient, err := ssh.NewSSHClient("devpod", ip+":22", privateKey)
 		if err != nil {
-			logs.Debugf("error connecting to private ip [%s]: %v", ip, err)
+			logs.Debugf("error connecting to public ip [%s]: %v", ip, err)
 		} else {
-			// successfully connected to the private ip
+			// successfully connected to the public ip
 			defer sshClient.Close()
 
 			return ssh.Run(ctx, sshClient, command, os.Stdin, os.Stdout, os.Stderr)
 		}
 	}
 
-	// try public ip
-	if instance.Reservations[0].Instances[0].PublicIpAddress != nil {
-		ip := *instance.Reservations[0].Instances[0].PublicIpAddress
+	// try private ip
+	if instance.Reservations[0].Instances[0].PrivateIpAddress != nil {
+		ip := *instance.Reservations[0].Instances[0].PrivateIpAddress
+
 		sshClient, err := ssh.NewSSHClient("devpod", ip+":22", privateKey)
 		if err != nil {
-			logs.Debugf("error connecting to public ip [%s]: %v", ip, err)
+			logs.Debugf("error connecting to private ip [%s]: %v", ip, err)
 		} else {
-			// successfully connected to the public ip
+			// successfully connected to the private ip
 			defer sshClient.Close()
 
 			return ssh.Run(ctx, sshClient, command, os.Stdin, os.Stdout, os.Stderr)
