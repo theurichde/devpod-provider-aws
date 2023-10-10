@@ -69,13 +69,28 @@ func (cmd *CommandCmd) Run(
 		return fmt.Errorf("instance %s doesn't exist", providerAws.Config.MachineID)
 	}
 
+	// try IPv6
+	if instance.Reservations[0].Instances[0].Ipv6Address != nil {
+		ip := *instance.Reservations[0].Instances[0].Ipv6Address
+
+		sshClient, err := ssh.NewSSHClient("devpod", "["+ip+"]:22", privateKey)
+		if err != nil {
+			logs.Debugf("error connecting to ipv6 [%s]: %v", ip, err)
+		} else {
+			// successfully connected via IPv6
+			defer sshClient.Close()
+
+			return ssh.Run(ctx, sshClient, command, os.Stdin, os.Stdout, os.Stderr)
+		}
+	}
+
 	// try public ip
 	if instance.Reservations[0].Instances[0].PublicIpAddress != nil {
 		ip := *instance.Reservations[0].Instances[0].PublicIpAddress
 
 		sshClient, err := ssh.NewSSHClient("devpod", ip+":22", privateKey)
 		if err != nil {
-			logs.Debugf("error connecting to public ip [%s]: %v", ip, err)
+			logs.Debugf("error connecting to public IPv4 [%s]: %v", ip, err)
 		} else {
 			// successfully connected to the public ip
 			defer sshClient.Close()
@@ -90,7 +105,7 @@ func (cmd *CommandCmd) Run(
 
 		sshClient, err := ssh.NewSSHClient("devpod", ip+":22", privateKey)
 		if err != nil {
-			logs.Debugf("error connecting to private ip [%s]: %v", ip, err)
+			logs.Debugf("error connecting to private IPv4 [%s]: %v", ip, err)
 		} else {
 			// successfully connected to the private ip
 			defer sshClient.Close()
