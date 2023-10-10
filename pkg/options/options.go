@@ -16,6 +16,7 @@ var (
 	AWS_VPC_ID               = "AWS_VPC_ID"
 	AWS_INSTANCE_TAGS        = "AWS_INSTANCE_TAGS"
 	AWS_INSTANCE_PROFILE_ARN = "AWS_INSTANCE_PROFILE_ARN"
+	AWS_USE_SPOT_INSTANCES   = "AWS_USE_SPOT_INSTANCES"
 )
 
 type Options struct {
@@ -30,6 +31,7 @@ type Options struct {
 	InstanceProfileArn string
 	InstanceTags       string
 	Zone               string
+	UseSpot            bool
 }
 
 func FromEnv(init bool) (*Options, error) {
@@ -59,8 +61,10 @@ func FromEnv(init bool) (*Options, error) {
 	retOptions.InstanceTags = os.Getenv(AWS_INSTANCE_TAGS)
 	retOptions.InstanceProfileArn = os.Getenv(AWS_INSTANCE_PROFILE_ARN)
 	retOptions.Zone = os.Getenv(AWS_REGION)
+	useSpot, _ := strconv.ParseBool(os.Getenv(AWS_USE_SPOT_INSTANCES))
+	retOptions.UseSpot = useSpot
 
-	// Return eraly if we're just doing init
+	// Return early if we're just doing init
 	if init {
 		return retOptions, nil
 	}

@@ -5,27 +5,32 @@ description: |-
 icon: https://devpod.sh/assets/aws.svg
 iconDark: https://devpod.sh/assets/aws_dark.svg
 optionGroups:
-  - options:
+  - name: "AWS Credentials"
+    defaultVisible: false
+    options:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
       - AWS_PROFILE
+      - AWS_REGION
+  - name: "AWS Instance Options"
+    defaultVisible: true
+    options:
       - AWS_AMI
-      - AWS_DISK_SIZE
       - AWS_INSTANCE_TYPE
+      - AWS_DISK_SIZE
       - AWS_VPC_ID
       - AWS_SUBNET_ID
       - AWS_SECURITY_GROUP_ID
       - AWS_INSTANCE_PROFILE_ARN
       - AWS_INSTANCE_TAGS
-    name: "AWS options"
+      - AWS_USE_SPOT_INSTANCES
+  - name: "Agent Options"
     defaultVisible: false
-  - options:
+    options:
       - AGENT_PATH
       - INACTIVITY_TIMEOUT
       - INJECT_DOCKER_CREDENTIALS
       - INJECT_GIT_CREDENTIALS
-    name: "Agent options"
-    defaultVisible: false
 options:
   AWS_REGION:
     suggestions:
@@ -73,6 +78,12 @@ options:
   AWS_SECURITY_GROUP_ID:
     description: The security group id to use. Multiple can be specified by separating with a comma.
     default: ""
+  AWS_USE_SPOT_INSTANCES:
+    description: Use spot instances
+    default: "false"
+    suggestions:
+      - "true"
+      - "false"
   AWS_AMI:
     description: The disk image to use.
     default: ""
@@ -225,16 +236,29 @@ options:
       - m7g.medium
       - m7g.xlarge
 
-
   INACTIVITY_TIMEOUT:
     description: If defined, will automatically stop the VM after the inactivity period.
     default: 10m
+    suggestions:
+      - 10m
+      - 30m
+      - 1h
+      - 2h
+      - 4h
+      - 8h
+      - 12h
   INJECT_GIT_CREDENTIALS:
     description: "If DevPod should inject git credentials into the remote host."
     default: "true"
+    suggestions:
+      - "true"
+      - "false"
   INJECT_DOCKER_CREDENTIALS:
     description: "If DevPod should inject docker credentials into the remote host."
     default: "true"
+    suggestions:
+      - "true"
+      - "false"
   AGENT_PATH:
     description: The path where to inject the DevPod agent to.
     default: /var/lib/toolbox/devpod
@@ -247,11 +271,11 @@ agent:
     AWS_PROVIDER:
       - os: linux
         arch: amd64
-        path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
+        path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
         checksum: ##CHECKSUM_LINUX_AMD64##
       - os: linux
         arch: arm64
-        path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
+        path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
         checksum: ##CHECKSUM_LINUX_ARM64##
   exec:
     shutdown: |-
@@ -260,24 +284,24 @@ binaries:
   AWS_PROVIDER:
     - os: linux
       arch: amd64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
+      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-amd64
       checksum: ##CHECKSUM_LINUX_AMD64##
-    - os: linux
-      arch: arm64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
-      checksum: ##CHECKSUM_LINUX_ARM64##
-    - os: darwin
-      arch: amd64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-amd64
-      checksum: ##CHECKSUM_DARWIN_AMD64##
-    - os: darwin
-      arch: arm64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-arm64
-      checksum: ##CHECKSUM_DARWIN_ARM64##
-    - os: windows
-      arch: amd64
-      path: https://github.com/loft-sh/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-windows-amd64.exe
-      checksum: ##CHECKSUM_WINDOWS_AMD64##
+#    - os: linux
+#      arch: arm64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-linux-arm64
+#      checksum: ##CHECKSUM_LINUX_ARM64##
+#    - os: darwin
+#      arch: amd64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-amd64
+#      checksum: ##CHECKSUM_DARWIN_AMD64##
+#    - os: darwin
+#      arch: arm64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-darwin-arm64
+#      checksum: ##CHECKSUM_DARWIN_ARM64##
+#    - os: windows
+#      arch: amd64
+#      path: https://github.com/theurichde/devpod-provider-aws/releases/download/##VERSION##/devpod-provider-aws-windows-amd64.exe
+#      checksum: ##CHECKSUM_WINDOWS_AMD64##
 exec:
   init: ${AWS_PROVIDER} init
   command: ${AWS_PROVIDER} command
